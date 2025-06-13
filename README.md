@@ -61,24 +61,6 @@
 - **环顾四周**  
   一键控制机器人头部舵机，完成“环顾”动作，并有语音提示。
 
-## 快速开始
-
-1. **环境准备**
-   - 树莓派（或等效 Linux 环境）
-   - Python 3.7+
-   - 依赖库：`opencv-python`, `numpy`, `requests`, `websocket-client` 等
-   - 机器人硬件驱动（见 `hiwonder/` 目录）
-
-2. **主要文件说明**
-   - `command.py`：主程序，包含全部核心功能
-   - `hiwonder/`：硬件及语音模块驱动
-   - `tts_ws_python3_demo.py`：科大讯飞 TTS 语音合成示例
-   - `Transport_to_words.py`：录音辅助
-
-3. **启动方式**
-
-   ```bash
-   python3 command.py
 
 ## 快速开始
 
