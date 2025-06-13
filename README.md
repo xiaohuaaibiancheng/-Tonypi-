@@ -9,9 +9,10 @@
 ```
 ├── ActionGroups/     # 预设动作文件，控制机器人执行具体动作
 ├── Functions/        # 机器人核心功能实现
-│   ├── ...           # 各类行为控制脚本
+├── models/ 存放视觉识别相关模型文件       
 ├── command.py        # 多模态扩展功能的主入口
-├── ...
+├── Transport_to_words.py #利用语音转文字api 转文字的脚本
+├── tts_ws_python3_demo.py # 文本转音频的脚本
 ```
 
 ## 主要功能介绍
