@@ -342,13 +342,26 @@ def setBusServoPulse(id, pulse, use_time):
 输出：{'action':["setBusServoPulse(15, 215, 500)", "setBusServoPulse(7, 785,500)"，"setBusServoPulse(14, 170,500)"，"setBusServoPulse(6, 830,500)"], 'response':'我听说特斯拉的人形机器人兄弟们，每天都在干这种活'}"""
 
 class Camera:
-    def __init__(self, resolution=(640, 480)):
+    def __init__(self, resolution=(640, 480), use_optical_flow=True):
         self.cap = None
         self.width = resolution[0]
         self.height = resolution[1]
         self.frame = None
+        self.prev_frame = None  # 存储前一帧用于光流计算
         self.opened = False
         
+        # 光流相关属性
+        self.use_optical_flow = use_optical_flow
+        self.lk_params = dict(winSize=(15, 15), maxLevel=2, 
+                             criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+        self.good_features_params = dict(maxCorners=100, qualityLevel=0.3, minDistance=7, blockSize=7)
+        self.prev_gray = None
+        self.prev_points = None
+        self.next_points = None
+        self.frame_queue = []  # 存储帧队列用于补帧
+        self.max_queue_size = 5  # 最大帧队列大小
+
+        # 相机设置
         camera_setting = yaml_handle.get_yaml_data('/boot/camera_setting.yaml')
         self.flip = camera_setting['flip']
         self.flip_param = camera_setting['flip_param']
@@ -356,6 +369,117 @@ class Camera:
         # 以子线程的形式获取图像
         self.th = threading.Thread(target=self.camera_task, args=(), daemon=True)
         self.th.start()
+        
+    def calculate_optical_flow(self, prev_frame, next_frame):
+        """
+        使用Lucas-Kanade算法计算光流
+        """
+        prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+        next_gray = cv2.cvtColor(next_frame, cv2.COLOR_BGR2GRAY)
+        
+        # 在第一帧或需要重新检测特征点时
+        if self.prev_points is None or len(self.prev_points) < 5:
+            p0 = cv2.goodFeaturesToTrack(prev_gray, mask=None, **self.good_features_params)
+            if p0 is not None:
+                self.prev_points = p0
+            else:
+                return None, None
+        
+        # 计算光流
+        p1, st, err = cv2.calcOpticalFlowPyrLK(
+            prev_gray, next_gray, self.prev_points, None, **self.lk_params)
+        
+        # 仅保留好的特征点
+        good_new = p1[st == 1]
+        good_old = self.prev_points[st == 1]
+        
+        # 如果没有足够的点，重新检测
+        if len(good_new) < 5:
+            p0 = cv2.goodFeaturesToTrack(prev_gray, mask=None, **self.good_features_params)
+            if p0 is not None:
+                self.prev_points = p0
+                good_new = p1[st == 1]
+                good_old = self.prev_points[st == 1]
+                if len(good_new) < 5:
+                    return None, None
+        
+        # 计算点之间的平均位移
+        displacement = np.mean(good_new - good_old, axis=0)
+        
+        # 更新前一帧数据
+        self.prev_points = good_new.reshape(-1, 1, 2)
+        self.prev_points = p1[st == 1].reshape(-1, 1, 2)
+        
+        return displacement, good_new
+    
+    def generate_interpolated_frame(self, prev_frame, next_frame, displacement, alpha):
+        """
+        使用光流信息生成插值帧
+        """
+        # 创建位移场
+        height, width = prev_frame.shape[:2]
+        flow = np.zeros((height, width, 2), dtype=np.float32)
+        
+        # 填充位移
+        flow[..., 0] = displacement[0] * alpha
+        flow[..., 1] = displacement[1] * alpha
+        
+        # 应用光流进行运动补偿
+        interpolated_frame = np.zeros_like(prev_frame)
+        
+        # 前向变形生成插值帧
+        for y in range(height):
+            for x in range(width):
+                ny = int(y + flow[y, x, 1])
+                nx = int(x + flow[y, x, 0])
+                
+                if 0 <= ny < height and 0 <= nx < width:
+                    interpolated_frame[y, x] = prev_frame[ny, nx]
+        
+        return interpolated_frame
+    
+    def interpolate_frames(self, prev_frame, next_frame):
+        """
+        使用光流生成插值帧
+        """
+        # 计算光流
+        displacement, points = self.calculate_optical_flow(prev_frame, next_frame)
+        if displacement is None:
+            # 光流计算失败，使用简单的平均
+            return [cv2.addWeighted(prev_frame, 0.5, next_frame, 0.5, 0)]
+        
+        interpolated_frames = []
+        # 创建一个中间插值帧
+        interpolated = self.generate_interpolated_frame(prev_frame, next_frame, displacement, 0.5)
+        interpolated_frames.append(interpolated)
+        
+        return interpolated_frames
+    
+    def optical_flow_interpolation(self, new_frame):
+        """
+        使用光流进行帧插值
+        """
+        if self.prev_frame is None:
+            # 第一帧，保存当前帧并直接返回
+            self.prev_frame = new_frame.copy()
+            self.frame_queue.append(new_frame.copy())
+            return [new_frame.copy()]
+        
+        # 检查是否需要插值
+        interpolated_frames = []
+        
+        if len(self.frame_queue) > 0:
+            prev_frame = self.frame_queue[-1]  # 使用队列中最后一帧作为前一帧
+            interpolated_frames = self.interpolate_frames(prev_frame, new_frame)
+            
+        # 更新帧队列
+        self.frame_queue.append(new_frame.copy())
+        if len(self.frame_queue) > self.max_queue_size:
+            self.frame_queue.pop(0)
+        
+        self.prev_frame = new_frame.copy()
+        
+        return interpolated_frames + [new_frame.copy()]
 
     def camera_open(self):
         try:
@@ -394,9 +518,18 @@ class Camera:
                     if ret:
                         if self.flip:
                             Frame = cv2.resize(frame_tmp, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
-                            self.frame = cv2.flip(Frame, self.flip_param)
+                            processed_frame = cv2.flip(Frame, self.flip_param)
                         else:
-                            self.frame = cv2.resize(frame_tmp, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
+                            processed_frame = cv2.resize(frame_tmp, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
+                        
+                        # 应用光流补帧
+                        if self.use_optical_flow and processed_frame is not None:
+                            frames = self.optical_flow_interpolation(processed_frame)
+                            # 使用最新的帧作为当前帧
+                            self.frame = frames[-1]
+                        else:
+                            self.frame = processed_frame
+                            
                     else:
                         self.frame = None
                         cap = cv2.VideoCapture(-1)
