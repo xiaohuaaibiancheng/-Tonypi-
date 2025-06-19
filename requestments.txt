@@ -1,0 +1,24 @@
+opencv-python             # cv2 图像处理
+numpy
+PyYAML                    # 配置文件解析
+requests                  # 用于API调用
+websocket-client          # 语音识别API通信
+dashscope                 # 通义千问API（如无pip包，详见阿里官方文档）
+soundfile                 # 音频处理（如代码涉及音频文件操作）
+pyaudio                   # 录音/播放音频（如涉及麦克风/扬声器）
+tqdm                      # 进度条（如有用）
+matplotlib                # 图像可视化（如有用）
+# 语音合成等相关
+
+
+# hiwonder相关为官方机器人库，
+
+
+# 其他常见依赖,如果需要
+# scipy                   # 如有用到科学计算
+# torch                   # 如用到深度学习推理
+# Pillow                  # 如用到PIL图像处理
+
+# 仅在需要时添加
+# dashscope               # 阿里通义千问SDK，部分环境为 dashscope-openapi
+# openai             # 如需调用 deepseek API，需根据官方文档安装
