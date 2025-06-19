@@ -68,7 +68,7 @@
    ```bash
    git clone https://github.com/xiaohuaaibiancheng/-Tonypi-.git
    ```
-2. 按照 `Functions/` 目录下的说明，部署相应依赖和环境。
+2. 按照 `Functions/` 目录下的说明，部署相应依赖和环境，或者其他自需python包。
 3. 运行 `command.py`，体验多模态交互与智能行为功能。
 
 ## 贡献与交流
